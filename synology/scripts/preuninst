@@ -1,0 +1,4 @@
+#!/bin/bash 
+
+WD_PID=`ps -ef | grep mc2_wd.sh | grep -v grep | awk '{print $2}'`
+[[ ! -z "$WD_PID" ]] && kill -9 $WD_PID

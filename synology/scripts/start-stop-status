@@ -1,0 +1,427 @@
+#! /bin/sh
+###############################################################################
+# LSB compatible init script for Eaton - Intelligent Power Protector
+###############################################################################
+# chkconfig:          235 20 20
+# description:        Start/Stop Eaton - Intelligent Power Protector service.
+###############################################################################
+### BEGIN INIT INFO
+# Provides:          Eaton-IPP
+# Required-Start:    $network $remote_fs
+# Should-Start:
+# Required-Stop:     $network $remote_fs
+# Should-Stop:
+# Default-Start:     2 3 5
+# Default-Stop:      0 1 6
+# Short-Description: Start/Stop Eaton - Intelligent Power Protector service.
+### END INIT INFO
+###############################################################################
+
+DESC="Intelligent Power Protector"
+Eaton_IPP_HOME="/var/packages/ipp-linux/target"
+APP_NAME="Eaton-IPP"
+DAEMON="${Eaton_IPP_HOME}/${APP_NAME}"
+DAEMON_ARGS="-service"
+PIDFILE="/var/run/${APP_NAME}.pid"
+USER=root
+WD_NAME="mc2_wd.sh"
+WD_CMD="${Eaton_IPP_HOME}/bin/${WD_NAME}"
+
+daemon_init ()
+{
+# Determine the system type and initialize the environment.
+#
+# Note that the shell positional parameters must be preserved when calling
+#   this function in order for SuSE to initialize its environment properly.
+##
+  PATH=/sbin:/usr/sbin:/bin:/usr/bin
+  DAEMON_NAME="`basename \"$DAEMON\"`"
+  SCRIPT_NAME="`basename \"$0\" .init | sed 's/^[SK][0-9][0-9]*//'`"
+  SIGTERM_TIMEOUT="5"
+  STATUS=0
+
+  if [ -f /etc/debian_version -a -x /sbin/start-stop-daemon ]; then
+    SYSTEM="DEBIAN"
+    [ -x "$DAEMON" ] || exit 0                  # pkg removed but not purged
+    [ -r /etc/default/rcS ] && . /etc/default/rcS
+    [ -r /lib/init/vars.sh ] && . /lib/init/vars.sh
+    [ -r /lib/lsb/init-functions ] && . /lib/lsb/init-functions
+  elif [ -f /etc/redhat-release -a -r /etc/init.d/functions ]; then
+    SYSTEM="REDHAT"
+    export SYSTEMCTL_SKIP_REDIRECT=true
+    . /etc/init.d/functions
+    RH_SUBSYS="/var/lock/subsys/$DAEMON_NAME"
+  elif [ -f /etc/SuSE-release -a -r /etc/rc.status ]; then
+    SYSTEM="SUSE"
+    . /etc/rc.status
+    rc_reset
+  elif [ -r /lib/lsb/init-functions ]; then
+    SYSTEM="LSB"
+    . /lib/lsb/init-functions
+  else
+    SYSTEM="OTHER"
+  fi
+
+  # Exit if the package has been removed.
+  ##
+  [ -x "$DAEMON" ] || exit 5                    # LSB: program not installed
+
+  # Exit if the configuration has been removed.
+  ##
+  [ -z "$CONFIG" -o -r "$CONFIG" ] || exit 6    # LSB: program not configured
+}
+
+daemon_finish ()
+{
+# Return the exit status.
+##
+  case $SYSTEM in
+    SUSE)
+      rc_exit
+      ;;
+    DEBIAN|REDHAT|LSB|*)
+      exit $STATUS
+      ;;
+  esac
+}
+
+daemon_start ()
+{
+# Start the daemon.
+#
+# Required by LSB, where running "start" on a daemon already running should be
+#   considered successful.
+##
+  log_init "Starting $DESC" "$DAEMON_NAME"
+
+  # Launch Watch-dog
+  # Check if watch dog is already running
+  ps -ef | grep $WD_NAME | grep -v grep > /dev/null 2>&1
+  if [ $? -ne 0 ]
+  then
+    /bin/sh $WD_CMD > /dev/null 2>&1 &
+  fi
+
+  case $SYSTEM in
+    DEBIAN)
+      if $0 status >/dev/null 2>&1; then
+        STATUS=0
+      else
+       ERRMSG=`start-stop-daemon --start --quiet \
+          ${PIDFILE:+"--pidfile"} ${PIDFILE:+"$PIDFILE"} \
+          ${NICE:+"--nicelevel"} ${NICE:+"$NICE"} \
+          ${USER:+"--chuid"} ${USER:+"$USER"} \
+          --chdir "${Eaton_IPP_HOME}" \
+          --exec "$DAEMON" -- $DAEMON_ARGS`
+        STATUS=$?
+
+      fi
+      ;;
+    REDHAT)
+      if $0 status >/dev/null 2>&1; then
+        STATUS=0
+      else
+        daemon ${NICE:+"$NICE"} \
+          ${PIDFILE:+"--pidfile"} ${PIDFILE:+"$PIDFILE"} \
+          ${USER:+"--user"} ${USER:+"$USER"} \
+          "$DAEMON" $DAEMON_ARGS
+        STATUS=$?
+      fi
+      [ $STATUS -eq 0 ] && touch "$RH_SUBSYS" >/dev/null 2>&1
+      ;;
+    SUSE)
+      ERRMSG=`startproc ${NICE:+"-n"} ${NICE:+"$NICE"} \
+        ${USER:+"-u"} ${USER:+"$USER"} \
+        ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} \
+        "${DAEMON}" $DAEMON_ARGS`
+      rc_status -v
+      STATUS=$?
+      ;;
+    LSB)
+      if [ -n "$USER" ]; then
+        ERRMSG=`su "$USER" -c "/sbin/start_daemon \
+          ${NICE:+\"-n\"} ${NICE:+\"$NICE\"} \
+          ${PIDFILE:+\"-p\"} ${PIDFILE:+\"$PIDFILE\"} \
+          \"$DAEMON\" $DAEMON_ARGS"`
+      else
+        ERRMSG=`start_daemon ${NICE:+"-n"} ${NICE:+"$NICE"} \
+          ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} "$DAEMON" $DAEMON_ARGS`
+      fi
+      STATUS=$?
+      ;;
+    *)
+      if $0 status >/dev/null 2>&1; then
+        STATUS=0
+      else
+        [ -n "$NICE" ] && nice="nice -n $NICE"
+        if [ -n "$USER" ]; then
+          ERRMSG=`su "$USER" -c "$nice \"$DAEMON\" $DAEMON_ARGS"`
+        else
+          ERRMSG=`$nice "$DAEMON" $DAEMON_ARGS`
+        fi
+        STATUS=$?
+      fi
+      ;;
+  esac
+  log_finish "$STATUS" "$ERRMSG"
+}
+
+daemon_stop ()
+{
+# Stop the daemon.
+#
+# Required by LSB, where running "stop" on a daemon already stopped or n
+#   running should be considered successful.
+##
+  log_init "Stopping $DESC" "$DAEMON_NAME"
+
+  case $SYSTEM in
+    DEBIAN)
+      if ! $0 status >/dev/null 2>&1; then
+        STATUS=0
+      else
+        start-stop-daemon --stop --quiet \
+          ${PIDFILE:+"--pidfile"} ${PIDFILE:+"$PIDFILE"} \
+          --name "$DAEMON_NAME" ${SIGTERM_TIMEOUT:+"--retry"} \
+          ${SIGTERM_TIMEOUT:+"$SIGTERM_TIMEOUT"} >/dev/null 2>&1
+        STATUS=$?
+      fi
+      ;;
+    REDHAT)
+      if ! $0 status >/dev/null 2>&1; then
+        STATUS=0
+      else
+        killproc ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} "$DAEMON"
+        STATUS=$?
+      fi
+      [ $STATUS -eq 0 ] && rm -f "$RH_SUBSYS" >/dev/null 2>&1
+      ;;
+    SUSE)
+      killproc ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} \
+        ${SIGTERM_TIMEOUT:+"-t"} ${SIGTERM_TIMEOUT:+"$SIGTERM_TIMEOUT"} \
+        "${DAEMON}"
+      rc_status -v
+      ;;
+    LSB)
+      killproc ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} "$DAEMON"
+      STATUS=$?
+      ;;
+    *)
+      signal_process "$DAEMON"
+      rc=$?
+      [ $rc -eq 0 -o $rc -eq 2 ] && STATUS=0 || STATUS=1
+      ;;
+  esac
+  log_finish "$STATUS"
+  [ -f "$PIDFILE" ] && rm -f "$PIDFILE"
+}
+
+daemon_restart ()
+{
+# Stop and restart the daemon if it is already running;
+#   otherwise, start the daemon.
+#
+# Required by LSB, where running "restart" on a daemon already stopped or not
+#   running should be considered successful.
+##
+  if $0 status >/dev/null 2>&1; then
+    $0 stop && $0 start
+  else
+    $0 start
+  fi
+
+  case $SYSTEM in
+    SUSE)
+      rc_status
+      ;;
+    DEBIAN|REDHAT|LSB|*)
+      STATUS=$?
+      ;;
+  esac
+}
+
+daemon_status ()
+{
+# Print the current status of the daemon.
+#
+# Required by LSB.
+##
+  case $SYSTEM in
+    REDHAT)
+      status ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} "$DAEMON"
+      STATUS=$?
+      ;;
+    SUSE)
+      printf "Checking for daemon $DESC: "
+      checkproc ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} "${DAEMON}"
+      rc_status -v
+      ;;
+    LSB)
+      printf "Checking status of $DESC: "
+      pids=`pidofproc ${PIDFILE:+"-p"} ${PIDFILE:+"$PIDFILE"} \
+        "$DAEMON" 2>/dev/null`
+      STATUS=$?
+      if [ $STATUS -eq 0 -a -n "$pids" ]; then
+        echo "running."
+      elif [ $STATUS -ne 0 -a -s "$PIDFILE" ]; then
+        echo "dead."
+      else
+        echo "stopped."
+      fi
+      ;;
+    DEBIAN|*)
+      printf "Checking status of $DESC: "
+      pids=`query_pids "$DAEMON" "$PIDFILE"`
+      rc=$?
+      if [ $rc -eq 0 -a -n "$pids" ]; then
+        echo "running."
+        STATUS=0                        # LSB: program is running
+      elif [ $rc -ne 0 -a -s "$PIDFILE" ]; then
+        echo "dead."
+        STATUS=1                        # LSB: program is dead & pidfile exists
+      elif [ $rc -ne 0 ]; then
+        echo "stopped."
+        STATUS=3                        # LSB: program is not running
+      else
+        echo "unknown."
+        STATUS=4                        # LSB: program status unknown
+      fi
+      ;;
+  esac
+}
+
+query_pids ()
+{
+# Writes the matching PIDs to stdout.
+# Returns 0 on success (ie, pids found).
+##
+  PROCNAME="$1"
+  PIDFILE="$2"
+
+  if type pgrep >/dev/null 2>&1; then
+    pids=`pgrep -d ' ' -f "\`basename \"$PROCNAME\"\` $DAEMON_ARGS" 2>/dev/null`
+    rc=$?
+  elif type pidof >/dev/null 2>&1; then
+    pids=`pidof -o $$ -x "$PROCNAME" 2>/dev/null`
+    rc=$?
+  else
+    pids=`(ps awx -o pid -o command || ps -e -f -o pid -o args) 2>/dev/null \
+      | tail +2 | egrep "( |/)$PROCNAME( |$)" | grep -v egrep \
+      | sed 's/ *\([0-9]*\).*/\1/' | sort -n | tr '\012' ' '`
+    [ -n "$pids" ] && rc=0 || rc=1
+  fi
+
+  unset pids_running
+  if [ -n "$pids" -a -r "$PIDFILE" ]; then
+    read pid_line < "$PIDFILE"
+    for pid in $pid_line; do
+      expr -- "$pid" : '[0-9]*$' >/dev/null 2>&1 \
+        && expr -- " $pids " : ".* $pid .*" >/dev/null 2>&1 \
+        && pids_running="$pids_running $pid"
+    done
+    [ -n "$pids_running" ] && pids=$pids_running
+  fi
+
+  echo $pids
+  return $rc
+}
+
+signal_process ()
+{
+# Returns 0 on success, 1 if kill failed, 2 if PROCNAME is not running.
+##
+  PROCNAME="$1"
+  SIGNUM="$2"
+
+  pids=`query_pids "$DAEMON" "$PIDFILE"`
+  [ $? -ne 0 -o -z "$pids" ] && return 2
+
+  kill ${SIGNUM:+"-$SIGNUM"} $pids >/dev/null 2>&1
+  [ $? -ne 0 ] && return 1
+  [ -n "$SIGNUM" ] && return 0
+
+  pids=`query_pids "$DAEMON" "$PIDFILE"`
+  [ $? -ne 0 -o -z "$pids" ] && return 0
+  [ -z "$SIGTERM_TIMEOUT" ] && return 1
+
+  sleep "$SIGTERM_TIMEOUT"
+  kill -KILL $pids >/dev/null 2>&1
+  pids=`query_pids "$DAEMON" "$PIDFILE"`
+  [ $? -ne 0 -o -z "$pids" ] && return 0
+  return 1
+}
+
+log_init ()
+{
+# Output informational message at beginning of action.
+##
+  MESSAGE="$1"
+  PROCNAME="$2"
+
+  case $SYSTEM in
+    DEBIAN)
+      if type log_daemon_msg >/dev/null 2>&1; then
+        log_daemon_msg "$MESSAGE" "$PROCNAME"
+      else
+        printf "$MESSAGE: $PROCNAME"
+      fi
+      ;;
+    REDHAT|SUSE|LSB|*)
+      printf "$MESSAGE: $PROCNAME"
+      ;;
+  esac
+}
+
+log_finish ()
+{
+# Output informational/error message at end of action.
+##
+  STATUS="$1"
+  ERRMSG="$2"
+
+  case $SYSTEM in
+    DEBIAN)
+      if ( type log_end_msg && type log_failure_msg ) >/dev/null 2>&1; then
+        log_end_msg "$STATUS"
+        [ $STATUS -eq 0 -o -z "$ERRMSG" ] || log_failure_msg "$ERRMSG"
+      else
+        [ $STATUS -eq 0 ] && echo "." || echo " (failed)."
+        [ $STATUS -eq 0 -o -z "$ERRMSG" ] || echo "$ERRMSG" >&2
+      fi
+      ;;
+    REDHAT)
+      echo
+      ;;
+    SUSE)
+      [ $STATUS -eq 0 -o -z "$ERRMSG" ] || echo "$ERRMSG" >&2
+      ;;
+    LSB|*)
+      [ $STATUS -eq 0 ] && echo "." || echo " (failed)."
+      [ $STATUS -eq 0 -o -z "$ERRMSG" ] || echo "$ERRMSG" >&2
+      ;;
+  esac
+}
+
+daemon_init "$@"
+
+case "$1" in
+  start)
+    daemon_start
+    ;;
+  stop)
+    daemon_stop
+    ;;
+  restart)
+    daemon_restart
+    ;;
+  status)
+    daemon_status
+    ;;
+  *)
+    echo "Usage: `basename \"$0\"`" \
+      "(start|stop|restart|status)" >&2
+    exit 2                              # LSB: invalid or excess argument(s)
+    ;;
+esac
+
+daemon_finish

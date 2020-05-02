@@ -1,0 +1,11 @@
+#!/bin/bash
+
+case ${MakeClean} in
+	[Yy][Ee][Ss])
+		make clean
+		;;
+esac
+
+echo "make ${MAKE_FLAGS}"
+make ${MAKE_FLAGS}
+
