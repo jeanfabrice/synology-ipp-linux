@@ -9,9 +9,9 @@ NAS.
 
 * clone this repo into `toolkit/source/` folder.
 
-* run `pkgscripts/PkgCreate.py ipp-linux`
+* run `pkgscripts/PkgCreate.py synology-ipp-linux`
 
-* and... voilà, package is ready in `build_env/<your env>/image/package/`
+* and... voilà, package is ready in `build_env/<your env>/image/packages/`
 
 ## License
 
