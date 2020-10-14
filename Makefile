@@ -1,6 +1,6 @@
 include /env.mak
 
-IPP_VERSION=1.66.161-1
+IPP_VERSION=1.67.162-1
 IPP_PKGNAME=ipp-linux_$(IPP_VERSION)_amd64.deb
 IPP_SOURCE=http://pqsoftware.eaton.com/install/linux/ipp/
 

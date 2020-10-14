@@ -3,7 +3,7 @@
 . /pkgscripts/include/pkg_util.sh
 
 package="ipp-linux"
-version="1.66.161-1"
+version="1.67.162-1"
 displayname="ipp-linux"
 arch="$(pkg_get_platform) "
 maintainer="Jean-Fabrice"
